@@ -9,6 +9,7 @@ A responsive full stack personal finance tracker with React, Express, Supabase P
 - Dashboard totals, balance, monthly spending and charts
 - Monthly reports with savings and spending percentage
 - Transaction search, date/category/type/amount filters, pagination and CSV export
+- Import a bank statement CSV after signing in, with column mapping, preview and duplicate detection
 - Print monthly reports as PDF using the browser print dialog
 
 ## Local setup
@@ -20,6 +21,12 @@ A responsive full stack personal finance tracker with React, Express, Supabase P
 5. Open `http://localhost:5173`.
 
 New users confirm their email if confirmation is enabled in Supabase. The API refreshes expired access tokens. Existing accounts from the former MongoDB version are not migrated; that deployment never had a configured MongoDB connection.
+
+## Bank statements
+
+Use **Transactions → Import bank CSV** after exporting a CSV from your bank. Give the account a consistent nickname, choose date, description and either separate debit/credit columns or a signed amount column, then review every row before import. Dates can be YYYY-MM-DD or DD/MM/YYYY. Import at most 1,000 rows or 2 MB per file. Rows with invalid amounts or dates block import until corrected. Categories default to Other income/Other expense and can be edited later. Re-importing the same normalized row with the same nickname skips it; identical same-day rows in one statement are counted separately. For overlapping statements with different ordering of identical same-day rows, review for possible duplicates.
+
+The file is parsed in the browser; only selected transaction data and the account nickname are sent to the API. No bank passwords, OTPs, account numbers or raw statement files are requested or stored. This is a manual statement import, not a live bank connection. Live Indian bank data through Account Aggregator requires a regulated FIU or approved partner, provider onboarding and a consent flow; no provider credentials or paid service are configured here.
 
 ## Vercel deployment
 
@@ -38,6 +45,7 @@ Do not commit `.env`. The sample `.env.example` contains placeholders only. For 
 | GET, PATCH | `/api/me` | Read/update own profile |
 | GET, POST | `/api/transactions` | List/create own transactions |
 | PATCH, DELETE | `/api/transactions/:id` | Update/delete own transaction |
+| POST | `/api/imports/bank-csv` | Import up to 100 authenticated statement rows per request, skipping prior imports |
 | GET | `/api/reports?month=YYYY-MM` | Monthly and all-time aggregates |
 
 Protected routes require `Authorization: Bearer <Supabase access token>`. PostgreSQL RLS also enforces ownership on profiles and transactions. Monetary values use `numeric(15,2)`. Currency preference changes formatting only; it does not convert values.
