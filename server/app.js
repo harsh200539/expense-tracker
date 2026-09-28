@@ -1,9 +1,10 @@
 import express from 'express';
 import cors from 'cors';
+import { createHash } from 'node:crypto';
 import { db } from './db.js';
 
 const app = express();
-app.use(express.json({ limit: '32kb' }));
+app.use(express.json({ limit: '128kb' }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 const fail = (res, code, message) => res.status(code).json({ error: message });
@@ -101,6 +102,21 @@ app.post('/api/transactions', authenticate, wrap(async (req, res) => {
   let transaction; try { transaction = transactionInput(req.body); } catch { transaction = null; }
   if (!transaction) return fail(res, 400, 'Enter a valid title, category, date and positive amount.');
   res.status(201).json(checked(await req.client.from('transactions').insert({ ...transaction, user_id: req.user.id }).select('id,title,amount,type,category,date').single()).data);
+}));
+app.post('/api/imports/bank-csv', authenticate, wrap(async (req, res) => {
+  const account = cleanText(req.body?.account, 60);
+  const rows = req.body?.rows;
+  if (!account || !Array.isArray(rows) || rows.length < 1 || rows.length > 100) return fail(res, 400, 'Provide an account nickname and 1–100 statement rows.');
+  const records = [];
+  for (const row of rows) {
+    let transaction;
+    try { transaction = transactionInput(row); } catch { transaction = null; }
+    if (!transaction || !Number.isSafeInteger(row.occurrence) || row.occurrence < 1 || row.occurrence > 1000) return fail(res, 400, 'One or more statement rows are invalid.');
+    const key = JSON.stringify([account.toLowerCase(), transaction.date, transaction.type, transaction.amount, transaction.title.toLowerCase(), row.occurrence]);
+    records.push({ ...transaction, user_id: req.user.id, source_fingerprint: createHash('sha256').update(key).digest('hex') });
+  }
+  const { data } = checked(await req.client.from('transactions').upsert(records, { onConflict: 'user_id,source_fingerprint', ignoreDuplicates: true }).select('id'));
+  res.json({ imported: data.length, skipped: rows.length - data.length });
 }));
 app.patch('/api/transactions/:id', authenticate, wrap(async (req, res) => {
   let transaction; try { transaction = transactionInput(req.body); } catch { transaction = null; }
