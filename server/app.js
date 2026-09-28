@@ -74,6 +74,11 @@ app.post('/api/auth/logout', authenticate, wrap(async (req, res) => {
   res.status(204).end();
 }));
 app.get('/api/me', authenticate, wrap(async (req, res) => res.json({ user: publicUser(req.user, await profileFor(req)) })));
+app.get('/api/banks/status', authenticate, (_req, res) => res.json({ liveConnectionsAvailable: false, provider: 'Account Aggregator', message: 'Live bank linking requires production FIU approval and Account Aggregator credentials. Bank passwords and OTPs are never collected by Ledger.' }));
+app.get('/api/bank-accounts', authenticate, wrap(async (req, res) => {
+  const { data } = checked(await req.client.from('bank_accounts').select('id,nickname,source,created_at').eq('user_id', req.user.id).order('created_at', { ascending: false }));
+  res.json({ items: data });
+}));
 app.patch('/api/me', authenticate, wrap(async (req, res) => {
   const name = cleanText(req.body.name, 80);
   const currency = req.body.currency;
@@ -84,7 +89,8 @@ app.patch('/api/me', authenticate, wrap(async (req, res) => {
 app.get('/api/transactions', authenticate, wrap(async (req, res) => {
   const page = Math.max(1, Math.min(100000, parseInt(req.query.page, 10) || 1));
   const limit = Math.max(1, Math.min(100, parseInt(req.query.limit, 10) || 10));
-  let query = req.client.from('transactions').select('id,title,amount,type,category,date', { count: 'exact' }).eq('user_id', req.user.id);
+  let query = req.client.from('transactions').select('id,title,amount,type,category,date,bank_account_id', { count: 'exact' }).eq('user_id', req.user.id);
+  if (uuid(req.query.bankAccountId)) query = query.eq('bank_account_id', req.query.bankAccountId);
   if (['income', 'expense'].includes(req.query.type)) query = query.eq('type', req.query.type);
   if (typeof req.query.category === 'string' && req.query.category) query = query.eq('category', req.query.category);
   if (typeof req.query.month === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(req.query.month)) {
@@ -115,6 +121,10 @@ app.post('/api/imports/bank-csv', authenticate, wrap(async (req, res) => {
     const key = JSON.stringify([account.toLowerCase(), transaction.date, transaction.type, transaction.amount, transaction.title.toLowerCase(), row.occurrence]);
     records.push({ ...transaction, user_id: req.user.id, source_fingerprint: createHash('sha256').update(key).digest('hex') });
   }
+  let bankAccount = checked(await req.client.from('bank_accounts').select('id,source').eq('user_id', req.user.id).eq('nickname', account).maybeSingle()).data;
+  if (bankAccount?.source !== 'csv' && bankAccount) return fail(res, 409, 'This account name belongs to a live connection. Choose another nickname.');
+  if (!bankAccount) bankAccount = checked(await req.client.from('bank_accounts').upsert({ user_id: req.user.id, nickname: account, source: 'csv' }, { onConflict: 'user_id,nickname', ignoreDuplicates: true }).select('id').maybeSingle()).data || checked(await req.client.from('bank_accounts').select('id').eq('user_id', req.user.id).eq('nickname', account).single()).data;
+  for (const record of records) record.bank_account_id = bankAccount.id;
   const { data } = checked(await req.client.from('transactions').upsert(records, { onConflict: 'user_id,source_fingerprint', ignoreDuplicates: true }).select('id'));
   res.json({ imported: data.length, skipped: rows.length - data.length });
 }));

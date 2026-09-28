@@ -49,3 +49,8 @@ Do not commit `.env`. The sample `.env.example` contains placeholders only. For 
 | GET | `/api/reports?month=YYYY-MM` | Monthly and all-time aggregates |
 
 Protected routes require `Authorization: Bearer <Supabase access token>`. PostgreSQL RLS also enforces ownership on profiles and transactions. Monetary values use `numeric(15,2)`. Currency preference changes formatting only; it does not convert values.
+# Bank accounts and live connections
+
+The **Bank accounts** page groups imported CSV statements by account nickname. It labels these as imported statements, with no live bank connection or automatic sync. Account history remains available through the Transactions view and its account filter. Imports are idempotent for the same statement rows and nickname.
+
+Live Indian bank linking requires a licensed or otherwise eligible Financial Information User, production Account Aggregator provider credentials, the provider's consent flow and approved webhook/data handling. No production provider access is configured in this repository. The `/api/banks/status` endpoint reports this explicitly; the connect button is disabled until a real integration is approved and implemented. Never enter bank passwords or OTPs into this application. The count of participating financial information providers is dynamic and includes more than banks.
