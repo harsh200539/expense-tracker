@@ -22,7 +22,7 @@ The database needs no manual schema setup. Registration creates a unique email i
 
 ## Vercel deployment
 
-Import this repository into Vercel as a root project. The included `vercel.json` builds the React frontend and routes `/api/*` to the Express function. Add `MONGODB_URI` and `JWT_SECRET` under Vercel project environment variables for Production and Preview. MongoDB Atlas network access must permit Vercel's outgoing connections. The default CORS origin permits local development; production calls use the same domain and do not need CORS.
+Import this repository into Vercel as a root project. The included `vercel.json` builds the React frontend and routes `/api/*` to the Express function. Add a real `MONGODB_URI` and a randomly generated `JWT_SECRET` under Vercel project environment variables for Production and Preview. MongoDB Atlas network access must permit Vercel's outgoing connections. The default CORS origin permits local development; production calls always use the same domain and do not need CORS. Sample `.env.example` values must not be copied into production.
 
 Do not commit `.env`. The sample `.env.example` contains placeholders only. For a local production build run `npm run build`.
 

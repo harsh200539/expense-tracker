@@ -5,7 +5,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, ArcElement, T
 import './style.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, ArcElement, Tooltip, Legend);
-const API = import.meta.env.VITE_API_URL || '';
+const API = import.meta.env.PROD ? '' : (import.meta.env.VITE_API_URL || '');
 const categories = { income: ['Salary', 'Freelancing', 'Investments', 'Other income'], expense: ['Food', 'Shopping', 'Travel', 'Rent', 'Bills', 'Entertainment', 'Other expense'] };
 const today = () => new Date().toLocaleDateString('en-CA');
 const emptyForm = () => ({ title: '', amount: '', category: 'Food', date: today(), type: 'expense' });
