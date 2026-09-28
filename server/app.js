@@ -5,6 +5,7 @@ import { db } from './db.js';
 const app = express();
 app.use(express.json({ limit: '32kb' }));
 app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
+app.use('/api', (_req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 const fail = (res, code, message) => res.status(code).json({ error: message });
 const wrap = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 const checked = result => { if (result.error) throw result.error; return result; };
