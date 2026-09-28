@@ -1,8 +1,13 @@
-import { MongoClient } from 'mongodb';
+import { createClient } from '@supabase/supabase-js';
 
-let clientPromise;
-export async function db() {
-  if (!process.env.MONGODB_URI) throw new Error('MONGODB_URI is not configured');
-  if (!clientPromise) clientPromise = new MongoClient(process.env.MONGODB_URI).connect().catch(error => { clientPromise = undefined; throw error; });
-  return (await clientPromise).db();
+// One client per request prevents a bearer token from crossing user requests
+// when Vercel reuses a serverless function.
+export function db(token) {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_PUBLISHABLE_KEY;
+  if (!url || !key) throw new Error('Supabase is not configured');
+  return createClient(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    ...(token ? { global: { headers: { Authorization: `Bearer ${token}` } } } : {})
+  });
 }
