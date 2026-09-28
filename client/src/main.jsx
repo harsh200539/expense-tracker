@@ -10,8 +10,27 @@ const categories = { income: ['Salary', 'Freelancing', 'Investments', 'Other inc
 const today = () => new Date().toLocaleDateString('en-CA');
 const emptyForm = () => ({ title: '', amount: '', category: 'Food', date: today(), type: 'expense' });
 const format = (amount, currency = 'INR') => new Intl.NumberFormat('en-IN', { style: 'currency', currency, maximumFractionDigits: 2 }).format(amount || 0);
-async function request(path, options = {}, token) {
+let refreshPromise;
+async function refreshSession() {
+  if (!refreshPromise) refreshPromise = (async () => {
+    const current = JSON.parse(localStorage.getItem('ledger-session') || 'null');
+    if (!current?.refreshToken) throw new Error('Please sign in again.');
+    const response = await fetch(API + '/api/auth/refresh', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ refreshToken: current.refreshToken }) });
+    if (!response.ok) throw new Error('Please sign in again.');
+    const tokens = await response.json();
+    const next = { ...current, ...tokens };
+    localStorage.setItem('ledger-session', JSON.stringify(next));
+    window.dispatchEvent(new CustomEvent('ledger-session-updated', { detail: next }));
+    return next;
+  })().finally(() => { refreshPromise = undefined; });
+  return refreshPromise;
+}
+async function request(path, options = {}, token, refreshed = false) {
   const response = await fetch(API + '/api' + path, { ...options, headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}), ...options.headers } });
+  if (response.status === 401 && token && !refreshed && !path.startsWith('/auth/')) {
+    const next = await refreshSession();
+    return request(path, options, next.token, true);
+  }
   if (response.status === 204) return null;
   let data; try { data = await response.json(); } catch { throw new Error('The server is unavailable. Please try again.'); }
   if (!response.ok) throw new Error(data.error || 'Request failed.');
@@ -21,9 +40,9 @@ async function request(path, options = {}, token) {
 function Auth({ onAuth }) {
   const [mode, setMode] = useState('login');
   const [form, setForm] = useState({ name: '', email: '', password: '' });
-  const [error, setError] = useState(''); const [busy, setBusy] = useState(false);
-  async function submit(e) { e.preventDefault(); setError(''); setBusy(true); try { onAuth(await request('/auth/' + mode, { method: 'POST', body: JSON.stringify(form) })); } catch (err) { setError(err.message); } finally { setBusy(false); } }
-  return <div className="auth-shell"><div className="auth-brand"><div className="brand-mark">◈</div><h1>Know where your money goes.</h1><p>A clear view of your income, spending and savings—all in one place.</p><div className="auth-art"><span>Monthly overview</span><strong>Make every number count.</strong><div className="art-bars"><i/><i/><i/><i/><i/><i/><i/></div></div></div><div className="auth-panel"><div className="mobile-brand">◈ <b>Ledger</b></div><div className="auth-card"><div className="eyebrow">PERSONAL FINANCE, SIMPLIFIED</div><h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2><p>{mode === 'login' ? 'Sign in to see your finances.' : 'Start tracking what matters to you.'}</p><form onSubmit={submit}>{mode === 'register' && <label>Your name<input required maxLength="80" autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Your name"/></label>}<label>Email address<input required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com"/></label><label>Password<input required type="password" minLength="8" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters"/></label>{error && <div className="alert" role="alert">{error}</div>}<button className="primary full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button></form><div className="auth-switch">{mode === 'login' ? 'New to Ledger?' : 'Already have an account?'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); }}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></div></div></div></div>;
+  const [error, setError] = useState(''); const [busy, setBusy] = useState(false); const [message, setMessage] = useState('');
+  async function submit(e) { e.preventDefault(); setError(''); setMessage(''); setBusy(true); try { const result = await request('/auth/' + mode, { method: 'POST', body: JSON.stringify(form) }); if (result.confirmationRequired) { setMessage('Check your email to confirm your account, then sign in.'); setMode('login'); } else onAuth(result); } catch (err) { setError(err.message); } finally { setBusy(false); } }
+  return <div className="auth-shell"><div className="auth-brand"><div className="brand-mark">◈</div><h1>Know where your money goes.</h1><p>A clear view of your income, spending and savings—all in one place.</p><div className="auth-art"><span>Monthly overview</span><strong>Make every number count.</strong><div className="art-bars"><i/><i/><i/><i/><i/><i/><i/></div></div></div><div className="auth-panel"><div className="mobile-brand">◈ <b>Ledger</b></div><div className="auth-card"><div className="eyebrow">PERSONAL FINANCE, SIMPLIFIED</div><h2>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h2><p>{mode === 'login' ? 'Sign in to see your finances.' : 'Start tracking what matters to you.'}</p><form onSubmit={submit}>{mode === 'register' && <label>Your name<input required maxLength="80" autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="Your name"/></label>}<label>Email address<input required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com"/></label><label>Password<input required type="password" minLength="8" autoComplete={mode === 'login' ? 'current-password' : 'new-password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters"/></label>{message && <div className="notice" role="status">{message}</div>}{error && <div className="alert" role="alert">{error}</div>}<button className="primary full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'}</button></form><div className="auth-switch">{mode === 'login' ? 'New to Ledger?' : 'Already have an account?'} <button onClick={() => { setMode(mode === 'login' ? 'register' : 'login'); setError(''); setMessage(''); }}>{mode === 'login' ? 'Create an account' : 'Sign in'}</button></div></div></div></div>;
 }
 
 function App() {
@@ -34,7 +53,8 @@ function App() {
   const [editor, setEditor] = useState(null); const [profileOpen, setProfileOpen] = useState(false); const [profile, setProfile] = useState({ name: '', currency: 'INR' }); const [notice, setNotice] = useState(''); const [version, setVersion] = useState(0);
   const token = session?.token, currency = session?.user?.currency || 'INR';
   function onAuth(next) { localStorage.setItem('ledger-session', JSON.stringify(next)); setSession(next); }
-  function logout() { localStorage.removeItem('ledger-session'); setSession(null); setReport(null); setList({ items: [], total: 0, page: 1, pages: 1 }); }
+  function logout() { if (token) request('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken: session.refreshToken }) }, token).catch(() => {}); localStorage.removeItem('ledger-session'); setSession(null); setReport(null); setList({ items: [], total: 0, page: 1, pages: 1 }); }
+  useEffect(() => { const updated = event => setSession(event.detail); window.addEventListener('ledger-session-updated', updated); return () => window.removeEventListener('ledger-session-updated', updated); }, []);
   useEffect(() => { if (!token) return; request('/me', {}, token).then(({ user }) => { setSession(s => { if (!s) return s; const next = { ...s, user }; localStorage.setItem('ledger-session', JSON.stringify(next)); return next; }); }).catch(err => { if (err.message === 'Please sign in again.') logout(); }); }, [token]);
   useEffect(() => { if (!token) return; let active = true; setLoading(true); setError(''); const params = new URLSearchParams({ page: String(page), limit: '10' }); for (const [key, val] of Object.entries(filters)) if (val) params.set(key, val); Promise.all([request('/reports?month=' + month, {}, token), request('/transactions?' + params, {}, token)]).then(([r, l]) => { if (active) { setReport(r); setList(l); } }).catch(err => { if (active) setError(err.message); }).finally(() => { if (active) setLoading(false); }); return () => { active = false; }; }, [token, month, page, filters, version]);
   function changeFilter(key, value) { setPage(1); setFilters(f => ({ ...f, [key]: value })); }
